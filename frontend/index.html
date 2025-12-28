@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Football Realtime Tracker</title>
+    <style>
+        body {
+            background: #0b0b0b;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            background: #1a472a;
+            border: 2px solid white;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            z-index: 10;
+        }
+        #controls label {
+            margin-right: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="controls">
+    <label><input type="checkbox" id="showHome" checked> Home team</label>
+    <label><input type="checkbox" id="showAway" checked> Away team</label>
+</div>
+
+<canvas id="field" width="1050" height="680"></canvas>
+
+<script>
+const FIELD_LENGTH = 105;
+const FIELD_WIDTH = 68;
+const SCALE = 10;
+
+const canvas = document.getElementById("field");
+const ctx = canvas.getContext("2d");
+
+// Player positions saving
+const teams = { home: {}, away: {} };
+
+// Team's kit
+const TEAM_STYLE = {
+    home: { player: "red", line: "rgba(255,255,255,0.25)", triangle: "rgba(0,180,255,0.15)" },
+    away: { player: "blue", line: "rgba(255,255,255,0.25)", triangle: "rgba(255,180,0,0.15)" }
+};
+
+// Flags to display the teams
+let showHome = true;
+let showAway = true;
+document.getElementById("showHome").addEventListener("change", e => showHome = e.target.checked);
+document.getElementById("showAway").addEventListener("change", e => showAway = e.target.checked);
+
+function distance(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+// Draw field
+function drawField() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 2;
+
+    // Lines
+    ctx.strokeRect(0, 0, FIELD_LENGTH * SCALE, FIELD_WIDTH * SCALE);
+
+    // Center
+    ctx.beginPath();
+    ctx.moveTo((FIELD_LENGTH / 2) * SCALE, 0);
+    ctx.lineTo((FIELD_LENGTH / 2) * SCALE, FIELD_WIDTH * SCALE);
+    ctx.stroke();
+
+    // Circle
+    ctx.beginPath();
+    ctx.arc((FIELD_LENGTH / 2) * SCALE, (FIELD_WIDTH / 2) * SCALE, 9.15 * SCALE, 0, Math.PI * 2);
+    ctx.stroke();
+}
+
+// Draw shapes between the nearest players
+function drawTriangles(team) {
+    if ((team === "home" && !showHome) || (team === "away" && !showAway)) return;
+    const ps = Object.values(teams[team]);
+    ctx.fillStyle = TEAM_STYLE[team].triangle;
+
+    for (let i = 0; i < ps.length; i++)
+        for (let j = i + 1; j < ps.length; j++)
+            for (let k = j + 1; k < ps.length; k++)
+                if (distance(ps[i], ps[j]) < 30 && distance(ps[j], ps[k]) < 30 && distance(ps[i], ps[k]) < 30) {
+                    ctx.beginPath();
+                    ctx.moveTo(ps[i].x * SCALE, ps[i].y * SCALE);
+                    ctx.lineTo(ps[j].x * SCALE, ps[j].y * SCALE);
+                    ctx.lineTo(ps[k].x * SCALE, ps[k].y * SCALE);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+}
+
+// Lines between the nearest players
+function drawConnections(team) {
+    if ((team === "home" && !showHome) || (team === "away" && !showAway)) return;
+    const ps = Object.values(teams[team]);
+    ctx.strokeStyle = TEAM_STYLE[team].line;
+    ctx.lineWidth = 1;
+
+    for (let i = 0; i < ps.length; i++)
+        for (let j = i + 1; j < ps.length; j++)
+            if (distance(ps[i], ps[j]) < 25) {
+                ctx.beginPath();
+                ctx.moveTo(ps[i].x * SCALE, ps[i].y * SCALE);
+                ctx.lineTo(ps[j].x * SCALE, ps[j].y * SCALE);
+                ctx.stroke();
+            }
+}
+
+// Players and IDs
+function drawPlayers(team) {
+    if ((team === "home" && !showHome) || (team === "away" && !showAway)) return;
+    for (const id in teams[team]) {
+        const p = teams[team][id];
+
+        // Player circle
+        ctx.fillStyle = TEAM_STYLE[team].player;
+        ctx.beginPath();
+        ctx.arc(p.x * SCALE, p.y * SCALE, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // ID
+        ctx.fillStyle = "white";
+        ctx.font = "12px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(id.toString(), p.x * SCALE, p.y * SCALE);
+    }
+}
+
+// Render loop
+function render() {
+    drawField();
+    drawTriangles("home");
+    drawTriangles("away");
+    drawConnections("home");
+    drawConnections("away");
+    drawPlayers("home");
+    drawPlayers("away");
+    requestAnimationFrame(render);
+}
+
+render();
+
+// WebSocket connection
+const ws = new WebSocket("ws://localhost:8001/ws/positions");
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (!data.team) return;
+
+    teams[data.team][data.player_id] = {
+        x: data.x_meters,
+        y: data.y_meters
+    };
+};
+
+ws.onopen = () => console.log("Connected to WS");
+ws.onerror = e => console.error("WS error:", e);
+</script>
+
+</body>
+</html>
